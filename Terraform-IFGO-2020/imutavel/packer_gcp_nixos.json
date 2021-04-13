@@ -1,0 +1,48 @@
+{
+  "variables":{
+    "project_id":"{{env `GCP_PROJECT_ID`}}",
+    "gcp_service_account_file":"{{env `GCP_SERVICE_ACCOUNT_FILE`}}",
+    "ssh_priv_key":"{{env `SSH_PRIV_KEY`}}",
+    "mode":"{{env `MODE`}}",
+    "type":"{{env `TYPE`}}"
+  },
+  "builders":[
+    {
+      "instance_name":"packer-build-vm-{{user `type`}}",
+      "service_account_email":"svcacc",
+      "type":"googlecompute",
+      "account_file":"{{user `gcp_service_account_file`}}",
+      "project_id":"{{user `project_id`}}",
+      "source_image":"nixos-20-03-prepared",
+      "ssh_username":"packer",
+      "ssh_private_key_file":"{{user `ssh_priv_key`}}",
+      "zone":"southamerica-east1-a",
+      "image_name":"nixos-20-03-{{user `type`}}",
+      "use_os_login":"false",
+      "disk_size": "30"
+    }
+  ],
+  "provisioners":[
+    {
+      "type":"file",
+      "source":"{{user `mode`}}",
+      "destination":"/tmp/configuration.nix"
+    },
+    {
+      "type":"shell",
+      "inline":[
+        "sleep 15",
+        "nix-env -iA nixos.google-cloud-sdk",
+        "gcloud compute disks create packer-build-vm --size 30 --type pd-ssd --zone southamerica-east1-a --quiet" ,
+        "gcloud compute instances attach-disk packer-build-vm-{{user `type`}} --disk packer-build-vm --zone southamerica-east1-a --device-name={{user `type`}} --quiet",
+        "sudo cp /tmp/configuration.nix /etc/nixos/configuration.nix",
+        "sudo nixos-rebuild switch --upgrade",
+        "sudo nix-collect-garbage --delete-older-than 1d",
+        "sudo nix-store --optimise",
+        "gcloud compute instances detach-disk packer-build-vm-{{user `type`}} --disk packer-build-vm --zone southamerica-east1-a --quiet",
+        "gcloud compute disks delete packer-build-vm --zone southamerica-east1-a --quiet",
+        "nix-env --uninstall google-cloud-sdk"
+      ]
+    }
+  ]
+}
